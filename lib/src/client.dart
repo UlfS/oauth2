@@ -70,14 +70,18 @@ class Client extends http.BaseClient {
   /// Whether to use HTTP Basic authentication for authorizing the client.
   final bool _basicAuth;
 
+  /// Whether scopes should be explicitly sent with (refresh) requests or be
+  /// inferred by the server.
+  final bool implicitScopes;
+
   /// The underlying HTTP client.
   http.Client _httpClient;
 
   /// Creates a new client from a pre-existing set of credentials.
   ///
   /// When authorizing a client for the first time, you should use
-  /// [AuthorizationCodeGrant] or [resourceOwnerPasswordGrant] instead of
-  /// constructing a [Client] directly.
+  /// [AuthorizationCodeGrant], [resourceOwnerPasswordGrant] or
+  /// [clientCredentialsGrant] instead of constructing a [Client] directly.
   ///
   /// [httpClient] is the underlying client that this forwards requests to after
   /// adding authorization credentials to them.
@@ -87,6 +91,7 @@ class Client extends http.BaseClient {
       {this.identifier,
       this.secret,
       bool basicAuth: true,
+      this.implicitScopes: false,
       http.Client httpClient})
       : _basicAuth = basicAuth,
         _httpClient = httpClient == null ? new http.Client() : httpClient {
@@ -149,12 +154,21 @@ class Client extends http.BaseClient {
       throw new StateError("$prefix can't be refreshed.");
     }
 
-    _credentials = await credentials.refresh(
-        identifier: identifier,
-        secret: secret,
-        newScopes: newScopes,
-        basicAuth: _basicAuth,
-        httpClient: _httpClient);
+    if (_credentials.isClientCredentialsGrant) {
+      _credentials = await credentials.retrieveCredentials(
+          identifier: identifier,
+          secret: secret,
+          newScopes: implicitScopes ? [] : newScopes,
+          basicAuth: _basicAuth,
+          httpClient: _httpClient);
+    } else {
+      _credentials = await credentials.refresh(
+          identifier: identifier,
+          secret: secret,
+          newScopes: implicitScopes ? [] : newScopes,
+          basicAuth: _basicAuth,
+          httpClient: _httpClient);
+    }
 
     return this;
   }

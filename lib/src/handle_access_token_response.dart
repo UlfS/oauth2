@@ -25,7 +25,7 @@ const _expirationGrace = const Duration(seconds: 10);
 ///
 /// The scope strings will be separated by the provided [delimiter].
 Credentials handleAccessTokenResponse(http.Response response, Uri tokenEndpoint,
-    DateTime startTime, List<String> scopes, String delimiter) {
+    DateTime startTime, List<String> scopes, String delimiter, {bool isClientCredentialsGrant: false}) {
   if (response.statusCode != 200) _handleErrorResponse(response, tokenEndpoint);
 
   validate(condition, message) =>
@@ -88,7 +88,8 @@ Credentials handleAccessTokenResponse(http.Response response, Uri tokenEndpoint,
       refreshToken: parameters['refresh_token'],
       tokenEndpoint: tokenEndpoint,
       scopes: scopes,
-      expiration: expiration);
+      expiration: expiration,
+      isClientCredentialsGrant: isClientCredentialsGrant);
 }
 
 /// Throws the appropriate exception for an error response from the

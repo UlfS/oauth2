@@ -12,10 +12,10 @@ client has permission to access resources on behalf of the resource owner.
 
 OAuth2 provides several different methods for the client to obtain
 authorization. At the time of writing, this library only supports the
-[AuthorizationCodeGrant][] and [resourceOwnerPasswordGrant][] methods, but
-further methods may be added in the future. The following example uses this
-method to authenticate, and assumes that the library is being used by a
-server-side application.
+[AuthorizationCodeGrant][], [resourceOwnerPasswordGrant][] and
+[clientCredentialsGrant][] methods, but further methods may be added in the
+future. The following example uses this method to authenticate, and assumes that
+the library is being used by a server-side application.
 
 [AuthorizationCodeGrant]: http://www.dartdocs.org/documentation/oauth2/latest/index.html#oauth2/oauth2.AuthorizationCodeGrant
 [resourceOwnerPasswordGrant]: http://www.dartdocs.org/documentation/oauth2/latest/index.html#oauth2/oauth2.resourceOwnerPasswordGrant
@@ -86,7 +86,7 @@ Future<oauth2.Client> getClient() async {
   // `redirect` is an imaginary function that redirects the resource
   // owner's browser.
   await redirect(grant.getAuthorizationUrl(redirectUrl));
-  
+
   // Another imaginary function that listens for a request to `redirectUrl`.
   var request = await listen(redirectUrl);
 
@@ -139,6 +139,36 @@ final secret = "my client secret";
 var client = await oauth2.resourceOwnerPasswordGrant(
     authorizationEndpoint, username, password,
     identifier: identifier, secret: secret);
+
+// Once you have the client, you can use it just like any other HTTP client.
+var result = await client.read("http://example.com/protected-resources.txt");
+
+// Once we're done with the client, save the credentials file. This will allow
+// us to re-use the credentials and avoid storing the username and password
+// directly.
+new File("~/.myapp/credentials.json")
+    .writeAsString(client.credentials.toJson());
+```
+
+## Client Credentials Grant
+
+```dart
+// This URL is an endpoint that's provided by the authorization server. It's
+// usually included in the server's documentation of its OAuth2 API.
+final authorizationEndpoint =
+    Uri.parse("http://example.com/oauth2/authorization");
+
+// The authorization server may issue each client a separate client
+// identifier and secret, which allows the server to tell which client
+// is accessing it. Some servers may also have an anonymous
+// identifier/secret pair that any client may use.
+final identifier = "my client identifier";
+final secret = "my client secret";
+
+// Make a request to the authorization endpoint that will produce the fully
+// authenticated Client.
+var client = await oauth2.clientCredentialsGrant(
+    authorizationEndpoint, identifier, secret);
 
 // Once you have the client, you can use it just like any other HTTP client.
 var result = await client.read("http://example.com/protected-resources.txt");

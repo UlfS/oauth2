@@ -45,6 +45,12 @@ class Credentials {
   /// This may be `null`, indicating that the credentials can't be refreshed.
   final Uri tokenEndpoint;
 
+  /// Whether or not the client credentials grant is used.
+  ///
+  /// This is used to decide if a new access token can be retrieved without a
+  /// refresh token.
+  final bool isClientCredentialsGrant;
+
   /// The specific permissions being requested from the authorization server.
   ///
   /// The scope strings are specific to the authorization server and may be
@@ -66,7 +72,8 @@ class Credentials {
       expiration != null && new DateTime.now().isAfter(expiration);
 
   /// Whether it's possible to refresh these credentials.
-  bool get canRefresh => refreshToken != null && tokenEndpoint != null;
+  bool get canRefresh => (refreshToken != null && tokenEndpoint != null)
+      || isClientCredentialsGrant;
 
   /// Creates a new set of credentials.
   ///
@@ -83,7 +90,8 @@ class Credentials {
       this.tokenEndpoint,
       Iterable<String> scopes,
       this.expiration,
-      String delimiter})
+      String delimiter,
+      this.isClientCredentialsGrant: false})
       : scopes = new UnmodifiableListView(
             // Explicitly type-annotate the list literal to work around
             // sdk#24202.
@@ -136,11 +144,18 @@ class Credentials {
       expiration = new DateTime.fromMillisecondsSinceEpoch(expiration);
     }
 
+    var isClientCredentialsGrant = parsed['isClientCredentialsGrant'];
+    if (isClientCredentialsGrant != null) {
+      validate(isClientCredentialsGrant is bool,
+          'field "isClientCredentialsGrant" was not a bool, was "$isClientCredentialsGrant"');
+    }
+
     return new Credentials(parsed['accessToken'],
         refreshToken: parsed['refreshToken'],
         tokenEndpoint: tokenEndpoint,
         scopes: (scopes as List).map((scope) => scope as String),
-        expiration: expiration);
+        expiration: expiration,
+        isClientCredentialsGrant: isClientCredentialsGrant);
   }
 
   /// Serializes a set of credentials to JSON.
@@ -154,7 +169,8 @@ class Credentials {
             tokenEndpoint == null ? null : tokenEndpoint.toString(),
         'scopes': scopes,
         'expiration':
-            expiration == null ? null : expiration.millisecondsSinceEpoch
+            expiration == null ? null : expiration.millisecondsSinceEpoch,
+        'isClientCredentialsGrant': isClientCredentialsGrant
       });
 
   /// Returns a new set of refreshed credentials.
@@ -218,5 +234,53 @@ class Credentials {
         tokenEndpoint: credentials.tokenEndpoint,
         scopes: credentials.scopes,
         expiration: credentials.expiration);
+  }
+
+  Future<Credentials> retrieveCredentials(
+      {String identifier,
+      String secret,
+      Iterable<String> newScopes,
+      bool basicAuth: true,
+      http.Client httpClient}) async {
+    var scopes = this.scopes;
+    if (newScopes != null) scopes = newScopes.toList();
+    if (scopes == null) scopes = [];
+    if (httpClient == null) httpClient = new http.Client();
+
+    if (identifier == null && secret != null) {
+      throw new ArgumentError("secret may not be passed without identifier.");
+    }
+
+    var startTime = new DateTime.now();
+    if (tokenEndpoint == null) {
+      throw new StateError("Can't get credentials without a token endpoint.");
+    }
+
+    var headers = <String, String>{};
+
+    var body = {"grant_type": "client_credentials"};
+    if (!scopes.isEmpty) body["scope"] = scopes.join(_delimiter);
+
+    if (basicAuth && secret != null) {
+      headers["Authorization"] = basicAuthHeader(identifier, secret);
+    } else {
+      if (identifier != null) body["client_id"] = identifier;
+      if (secret != null) body["client_secret"] = secret;
+    }
+
+    var response =
+    await httpClient.post(tokenEndpoint, headers: headers, body: body);
+    var credentials = await handleAccessTokenResponse(
+        response, tokenEndpoint, startTime, scopes, _delimiter);
+
+    // The authorization server may issue a new refresh token. If it doesn't,
+    // we should re-use the one we already have.
+    if (credentials.refreshToken != null) return credentials;
+    return new Credentials(credentials.accessToken,
+        refreshToken: this.refreshToken,
+        tokenEndpoint: credentials.tokenEndpoint,
+        scopes: credentials.scopes,
+        expiration: credentials.expiration,
+        isClientCredentialsGrant: true);
   }
 }
